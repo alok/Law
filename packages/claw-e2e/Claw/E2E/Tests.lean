@@ -1,5 +1,10 @@
 import Claw.Gateway.Service
 import Claw.Memory.CacheStore
+import Claw.Channel.Registry
+import Claw.Channel.WebChat.Adapter
+import Claw.Channel.Telegram.Adapter
+import Claw.Channel.Slack.Adapter
+import Claw.Channel.Discord.Adapter
 
 namespace Claw.E2E
 open Claw.Core
@@ -8,6 +13,7 @@ open Claw.Provider
 open Claw.Runtime
 open Claw.Gateway
 open Claw.Memory
+open Claw.Channel
 
 private def assertTrue (cond : Bool) (msg : String) : IO Unit :=
   if !cond then
@@ -205,6 +211,32 @@ private def testCanonicalFallbackE2E : IO Unit := do
 
   pure ()
 
+private def testChannelAdapterFFIStubs : IO Unit := do
+  let adapters : List ChannelAdapter :=
+    [Claw.Channel.WebChat.adapter, Claw.Channel.Telegram.adapter, Claw.Channel.Slack.adapter, Claw.Channel.Discord.adapter]
+  for adapter in adapters do
+    match (← adapter.start) with
+    | .error e =>
+      throw <| IO.userError s!"adapter start failed ({adapter.name}): {e}"
+    | .ok handle =>
+      let result ← adapter.send handle {
+        channel := adapter.name
+        recipient := "recipient"
+        text := "hello"
+        traceId := { raw := s!"trace-{adapter.name}" }
+      }
+      match result with
+      | .ok _ => pure ()
+      | .error e => throw <| IO.userError s!"adapter send failed ({adapter.name}): {e}"
+      adapter.stop handle
+
+  let reg := ChannelRegistry.empty
+    |>.register Claw.Channel.WebChat.adapter
+    |>.register Claw.Channel.Telegram.adapter
+    |>.register Claw.Channel.Slack.adapter
+    |>.register Claw.Channel.Discord.adapter
+  assertEq "registry size" reg.names.length 4
+
 /-- Runs all added cache architecture tests for M1. -/
 def runAll : IO Unit := do
   testDeterministicFingerprint
@@ -213,6 +245,7 @@ def runAll : IO Unit := do
   testSystemReminderStability
   testCompactionFork
   testCanonicalFallbackE2E
+  testChannelAdapterFFIStubs
   IO.println "claw-e2e-tests: ok"
 
 end Claw.E2E
