@@ -30,3 +30,21 @@ lake exe clawctl cache stats
 lake exe clawctl cache misses --recent 20
 lake exe clawctl session fork --session default --reason model_switch
 ```
+
+## Daemon
+
+```bash
+lake exe clawd --once <<'EOF'
+webchat	session-1	user-1	trace-1	hello from daemon
+EOF
+```
+
+`clawd` reads stdin lines in TSV format:
+
+`channel<TAB>session_id<TAB>sender<TAB>trace_id<TAB>text`
+
+## Benchmark
+
+```bash
+lake exe claw_cache_bench --runs 50
+```

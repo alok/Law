@@ -5,6 +5,7 @@ import Claw.Channel.WebChat.Adapter
 import Claw.Channel.Telegram.Adapter
 import Claw.Channel.Slack.Adapter
 import Claw.Channel.Discord.Adapter
+import Claw.Daemon.Runner
 
 namespace Claw.E2E
 open Claw.Core
@@ -14,6 +15,7 @@ open Claw.Runtime
 open Claw.Gateway
 open Claw.Memory
 open Claw.Channel
+open Claw.Daemon
 
 private def assertTrue (cond : Bool) (msg : String) : IO Unit :=
   if !cond then
@@ -237,6 +239,35 @@ private def testChannelAdapterFFIStubs : IO Unit := do
     |>.register Claw.Channel.Discord.adapter
   assertEq "registry size" reg.names.length 4
 
+private def testDaemonMessagePath : IO Unit := do
+  let dbPath : System.FilePath := ".lake/build/daemon-e2e.db"
+  try
+    IO.FS.removeFile dbPath
+  catch _ =>
+    pure ()
+  let cfg : DaemonConfig := {
+    dbPath := dbPath
+    model := { raw := "daemon-model" }
+    channels := ["webchat"]
+    once := true
+  }
+  let runtime ← start cfg
+  try
+    let msg : InboundMessage := {
+      channel := "webchat"
+      sessionId := { raw := "daemon-session" }
+      sender := "test-user"
+      text := "hello daemon"
+      traceId := { raw := "daemon-trace" }
+    }
+    match (← handleMessage runtime msg) with
+    | .error err => throw <| IO.userError s!"daemon message failed: {err}"
+    | .ok _ => pure ()
+    let sessions ← runtime.sessions.get
+    assertTrue (sessions.contains msg.sessionId) "daemon session state should persist"
+  finally
+    shutdown runtime
+
 /-- Runs all added cache architecture tests for M1. -/
 def runAll : IO Unit := do
   testDeterministicFingerprint
@@ -246,6 +277,7 @@ def runAll : IO Unit := do
   testCompactionFork
   testCanonicalFallbackE2E
   testChannelAdapterFFIStubs
+  testDaemonMessagePath
   IO.println "claw-e2e-tests: ok"
 
 end Claw.E2E

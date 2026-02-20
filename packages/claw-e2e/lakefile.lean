@@ -16,6 +16,7 @@ require claw_channel_webchat from "../claw-channel-webchat"
 require claw_channel_telegram from "../claw-channel-telegram"
 require claw_channel_slack from "../claw-channel-slack"
 require claw_channel_discord from "../claw-channel-discord"
+require claw_daemon from "../claw-daemon"
 
 @[default_target]
 lean_lib ClawE2E where
@@ -24,3 +25,7 @@ lean_lib ClawE2E where
 @[default_target, test_driver]
 lean_exe claw_e2e_tests where
   root := `Claw.E2E.Tests
+
+@[default_target]
+lean_exe claw_cache_bench where
+  root := `Claw.E2E.CacheBench
