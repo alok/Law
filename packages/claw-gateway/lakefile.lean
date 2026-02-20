@@ -9,6 +9,7 @@ require claw_core from "../claw-core"
 require claw_cache from "../claw-cache"
 require claw_provider from "../claw-provider"
 require claw_runtime from "../claw-runtime"
+require claw_channel from "../claw-channel"
 
 @[default_target]
 lean_lib ClawGateway where

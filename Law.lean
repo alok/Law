@@ -4,6 +4,11 @@ import Claw.Provider.Engine
 import Claw.Runtime.Compaction
 import Claw.Gateway.Service
 import Claw.Memory.CacheStore
+import Claw.Channel.Registry
+import Claw.Channel.WebChat.Adapter
+import Claw.Channel.Telegram.Adapter
+import Claw.Channel.Slack.Adapter
+import Claw.Channel.Discord.Adapter
 
 namespace Law
 
