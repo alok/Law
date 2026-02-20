@@ -44,6 +44,9 @@ EOF
 
 `channel<TAB>session_id<TAB>sender<TAB>trace_id<TAB>text`
 
+Default daemon tool stubs are declared with Lean metaprogramming in `toolStub%` syntax
+(`packages/claw-core/Claw/Core/ToolDsl.lean`).
+
 ## Benchmark
 
 ```bash
