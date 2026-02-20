@@ -1,0 +1,11 @@
+.lake/
+.lean/
+build/
+*.olean
+*.ilean
+*.so
+*.dylib
+*.a
+.DS_Store
+upstream/openclaw
+upstream/zeroclaw
