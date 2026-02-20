@@ -1,0 +1,222 @@
+import Claw.Gateway.Service
+import Claw.Memory.CacheStore
+
+namespace Claw.E2E
+open Claw.Core
+open Claw.Cache
+open Claw.Provider
+open Claw.Runtime
+open Claw.Gateway
+open Claw.Memory
+
+private def assertTrue (cond : Bool) (msg : String) : IO Unit :=
+  if !cond then
+    throw <| IO.userError msg
+  else
+    pure ()
+
+private def assertEq [BEq α] [Repr α] (label : String) (actual expected : α) : IO Unit :=
+  if actual != expected then
+    throw <| IO.userError s!"assertEq failed ({label})\nexpected: {repr expected}\nactual:   {repr actual}"
+  else
+    pure ()
+
+private def testDeterministicFingerprint : IO Unit := do
+  let model : ModelId := { raw := "m1" }
+  let tools1 : List ToolDescriptor := [
+    { name := "beta", schemaHash := 2 },
+    { name := "alpha", schemaHash := 1 }
+  ]
+  let tools2 : List ToolDescriptor := [
+    { name := "alpha", schemaHash := 1 },
+    { name := "beta", schemaHash := 2 }
+  ]
+  let staticSegs : List PromptSegment := [
+    { kind := .staticSystem, bytes := "sys".toUTF8 },
+    { kind := .toolDefinitions, bytes := "tools".toUTF8 },
+    { kind := .projectContext, bytes := "project".toUTF8 },
+    { kind := .sessionContext, bytes := "session".toUTF8 }
+  ]
+  let a := buildFingerprint model tools1 "sys".toUTF8 "project".toUTF8 staticSegs
+  let b := buildFingerprint model tools2 "sys".toUTF8 "project".toUTF8 staticSegs
+  assertEq "tool digest stable" a.toolSchemaDigest b.toolSchemaDigest
+  assertEq "prefix digest stable" a.staticPrefixDigest b.staticPrefixDigest
+
+private def testStrictPolicyBlock : IO Unit := do
+  let oldFp : PromptPrefixFingerprint := {
+    model := { raw := "model-a" }
+    toolSchemaDigest := 1
+    systemPromptDigest := 2
+    projectContextDigest := 3
+    staticPrefixDigest := 4
+  }
+  let newFp : PromptPrefixFingerprint := { oldFp with model := { raw := "model-b" } }
+  let state : SessionState := {
+    sessionId := { raw := "s1" }
+    lineageId := { raw := "root/s1" }
+    fingerprint := oldFp
+  }
+  let next : ProposedRequestConfig := {
+    sessionId := { raw := "s1" }
+    proposed := newFp
+    segments := [
+      { kind := .staticSystem, bytes := "x".toUTF8 },
+      { kind := .toolDefinitions, bytes := "y".toUTF8 },
+      { kind := .projectContext, bytes := "z".toUTF8 },
+      { kind := .sessionContext, bytes := ByteArray.empty },
+      { kind := .dynamicMessages, bytes := ByteArray.empty }
+    ]
+  }
+  match validateTransitionStrict {} state next with
+  | .error .modelChangedWithoutFork => pure ()
+  | other => throw <| IO.userError s!"expected modelChangedWithoutFork, got {repr other}"
+
+private def testForkTransition : IO Unit := do
+  let fpA : PromptPrefixFingerprint := {
+    model := { raw := "model-a" }
+    toolSchemaDigest := 10
+    systemPromptDigest := 11
+    projectContextDigest := 12
+    staticPrefixDigest := 13
+  }
+  let fpB : PromptPrefixFingerprint := { fpA with model := { raw := "model-b" } }
+  let state : SessionState := {
+    sessionId := { raw := "s-fork" }
+    lineageId := { raw := "root/s-fork" }
+    fingerprint := fpA
+  }
+  let next : ProposedRequestConfig := {
+    sessionId := { raw := "s-fork-child" }
+    proposed := fpB
+    segments := [
+      { kind := .staticSystem, bytes := "sys".toUTF8 },
+      { kind := .toolDefinitions, bytes := "tool".toUTF8 },
+      { kind := .projectContext, bytes := "proj".toUTF8 },
+      { kind := .sessionContext, bytes := "ctx".toUTF8 },
+      { kind := .dynamicMessages, bytes := "msg".toUTF8 }
+    ]
+    forkReason? := some "model_switch"
+  }
+  match validateTransitionStrict {} state next with
+  | .ok transitioned =>
+    assertTrue (transitioned.lineageId != state.lineageId) "lineage should change on fork"
+  | .error e =>
+    throw <| IO.userError s!"fork transition unexpectedly failed: {e}"
+
+private def testSystemReminderStability : IO Unit := do
+  let model : ModelId := { raw := "cache-model" }
+  let tools : List ToolDescriptor := [{ name := "tool", schemaHash := 7 }]
+  let staticSegs : List PromptSegment := [
+    { kind := .staticSystem, bytes := "system".toUTF8 },
+    { kind := .toolDefinitions, bytes := "tool".toUTF8 },
+    { kind := .projectContext, bytes := "project".toUTF8 },
+    { kind := .sessionContext, bytes := "session".toUTF8 }
+  ]
+  let a := buildFingerprint model tools "system".toUTF8 "project".toUTF8 staticSegs
+  let b := buildFingerprint model tools "system".toUTF8 "project".toUTF8 staticSegs
+  assertEq "system reminder should not affect static digest" a.staticPrefixDigest b.staticPrefixDigest
+
+private def testCompactionFork : IO Unit := do
+  let base : List PromptSegment := [
+    { kind := .staticSystem, bytes := "sys".toUTF8 },
+    { kind := .toolDefinitions, bytes := "tools".toUTF8 },
+    { kind := .projectContext, bytes := "project".toUTF8 },
+    { kind := .sessionContext, bytes := "session".toUTF8 },
+    { kind := .dynamicMessages, bytes := "history".toUTF8 }
+  ]
+  match buildCacheSafeCompaction { raw := "s1" } { raw := "s1c" } base "compact".toUTF8 with
+  | .error e => throw <| IO.userError s!"compaction failed: {e}"
+  | .ok fork =>
+    let oldPrefix := base.take 4
+    let newPrefix := fork.segments.take 4
+    assertEq "compaction preserves prefix" newPrefix oldPrefix
+    let tail := fork.segments.drop 4
+    assertTrue (tail.length = 1) "compaction should have one dynamic tail segment"
+
+private def testCanonicalFallbackE2E : IO Unit := do
+  let dbPath : System.FilePath := ".lake/build/cache-e2e.db"
+  try
+    IO.FS.removeFile dbPath
+  catch _ =>
+    pure ()
+
+  let store ← openCacheStore dbPath
+
+  let primary : ProviderClient := {
+    name := "primary"
+    run := fun _ => pure <| .error (.timeout "primary")
+  }
+  let secondary : ProviderClient := {
+    name := "secondary"
+    run := fun _ =>
+      pure <| .ok {
+        providerName := "secondary"
+        outputText := "fallback-ok"
+        usage := { inputTokens := 42, cacheReadTokens := 0, cacheWriteTokens := 4, latencyMs := 20 }
+      }
+  }
+
+  let engine : ProviderEngine := {
+    store := store
+    policy := {}
+    providers := [primary, secondary]
+    failover := { fallbackOrder := ["primary", "secondary"] }
+  }
+
+  let svc : GatewayService := { engine := engine }
+  let sid : SessionId := { raw := "session-fallback" }
+  let mut session := mkInitialSession sid { raw := "model-fallback" }
+
+  let turn : GatewayTurn := {
+    sessionId := sid
+    traceId := { raw := "trace-1" }
+    model := { raw := "model-fallback" }
+    tools := [{ name := "tool-a", schemaHash := 1 }]
+    staticSystem := "system".toUTF8
+    projectContext := "project".toUTF8
+    userMessage := "hello".toUTF8
+  }
+
+  match (← runTurn svc session turn) with
+  | .error e => throw <| IO.userError s!"first turn failed: {e}"
+  | .ok (resp, nextSession) =>
+    assertEq "fallback provider name" resp.providerName "secondary"
+    assertTrue (!resp.cacheHit) "first turn should not be a cache hit"
+    session := nextSession
+
+  match (← runTurn svc session turn) with
+  | .error e => throw <| IO.userError s!"second turn failed: {e}"
+  | .ok (resp, nextSession) =>
+    assertEq "fallback provider name second" resp.providerName "secondary"
+    assertTrue resp.cacheHit "second equivalent turn should be cache hit"
+    session := nextSession
+
+  let persisted? ← lookupFingerprint store sid
+  assertTrue persisted?.isSome "cache index should persist fingerprint"
+
+  let misses ← listRecentMisses store 50
+  assertTrue (!misses.isEmpty) "expected at least one miss event"
+
+  let stats ← cacheStats store
+  assertEq "blocked events" stats.blocked 0
+
+  let violations ← countPolicyViolations store
+  assertEq "policy violations" violations 0
+
+  pure ()
+
+/-- Runs all added cache architecture tests for M1. -/
+def runAll : IO Unit := do
+  testDeterministicFingerprint
+  testStrictPolicyBlock
+  testForkTransition
+  testSystemReminderStability
+  testCompactionFork
+  testCanonicalFallbackE2E
+  IO.println "claw-e2e-tests: ok"
+
+end Claw.E2E
+
+def main : IO UInt32 := do
+  Claw.E2E.runAll
+  pure 0
