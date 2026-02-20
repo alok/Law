@@ -13,8 +13,8 @@ structure GatewayChannelRuntime where
   registry : ChannelRegistry
   handles : IO.Ref (Std.HashMap String AdapterHandle)
 
-/-- Initialize and start all registered adapters. -/
-def initialize (service : GatewayService) (registry : ChannelRegistry) : IO GatewayChannelRuntime := do
+/-- Starts all registered channel adapters and returns runtime wiring. -/
+def start (service : GatewayService) (registry : ChannelRegistry) : IO GatewayChannelRuntime := do
   let mut handles : Std.HashMap String AdapterHandle := {}
   for (name, adapter) in registry.adapters.toList do
     match (← adapter.start) with
