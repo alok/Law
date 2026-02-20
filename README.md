@@ -29,6 +29,7 @@ lake exe claw_e2e_tests
 lake exe clawctl cache stats
 lake exe clawctl cache misses --recent 20
 lake exe clawctl session fork --session default --reason model_switch
+lake exe clawctl port status --runtime openclaw
 ```
 
 ## Daemon
@@ -48,3 +49,7 @@ EOF
 ```bash
 lake exe claw_cache_bench --runs 50
 ```
+
+## Research Notes
+
+- Runtime landscape + porting priorities: `docs/research/runtime-landscape-2026-02-20.md`

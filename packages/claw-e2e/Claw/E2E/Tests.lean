@@ -1,5 +1,6 @@
 import Claw.Gateway.Service
 import Claw.Memory.CacheStore
+import Claw.Core.Porting
 import Claw.Channel.Registry
 import Claw.Channel.WebChat.Adapter
 import Claw.Channel.Telegram.Adapter
@@ -268,6 +269,16 @@ private def testDaemonMessagePath : IO Unit := do
   finally
     shutdown runtime
 
+private def testPortingCoverageModel : IO Unit := do
+  let openclaw := portingFeatures .openclaw
+  let zeroclaw := portingFeatures .zeroclaw
+  assertTrue (!openclaw.isEmpty) "openclaw feature map must not be empty"
+  assertTrue (!zeroclaw.isEmpty) "zeroclaw feature map must not be empty"
+  let openclawCoverage := coveragePercent openclaw
+  let zeroclawCoverage := coveragePercent zeroclaw
+  assertTrue (openclawCoverage > 0.0) "openclaw coverage should be > 0"
+  assertTrue (zeroclawCoverage > 0.0) "zeroclaw coverage should be > 0"
+
 /-- Runs all added cache architecture tests for M1. -/
 def runAll : IO Unit := do
   testDeterministicFingerprint
@@ -278,6 +289,7 @@ def runAll : IO Unit := do
   testCanonicalFallbackE2E
   testChannelAdapterFFIStubs
   testDaemonMessagePath
+  testPortingCoverageModel
   IO.println "claw-e2e-tests: ok"
 
 end Claw.E2E
