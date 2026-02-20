@@ -1,4 +1,4 @@
-import Claw.Core.Types
+import Claw.Core.ToolDsl
 
 namespace Claw.Daemon
 open Claw.Core
@@ -8,11 +8,11 @@ private def trim (s : String) : String :=
 
 /-- Stable built-in tool stubs that remain cache-safe across turns. -/
 def defaultToolStubs : List ToolDescriptor := [
-  { name := "EnterPlanMode", version := "v1", schemaHash := 1001, deferredLoading := false },
-  { name := "ExitPlanMode", version := "v1", schemaHash := 1002, deferredLoading := false },
-  { name := "ToolSearch", version := "v1", schemaHash := 1003, deferredLoading := false },
-  { name := "ReadFile", version := "v1", schemaHash := 1101, deferredLoading := true },
-  { name := "RunCommand", version := "v1", schemaHash := 1102, deferredLoading := true }
+  toolStub% "EnterPlanMode" @ "v1" # 1001,
+  toolStub% "ExitPlanMode" @ "v1" # 1002,
+  toolStub% "ToolSearch" @ "v1" # 1003,
+  { (toolStub% "ReadFile" @ "v1" # 1101) with deferredLoading := true },
+  { (toolStub% "RunCommand" @ "v1" # 1102) with deferredLoading := true }
 ]
 
 /-- Channels enabled by default in daemon mode. -/

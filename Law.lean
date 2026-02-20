@@ -1,5 +1,6 @@
 import Claw.Core.Types
 import Claw.Core.Porting
+import Claw.Core.ToolDsl
 import Claw.Cache.Store
 import Claw.Provider.Engine
 import Claw.Runtime.Compaction

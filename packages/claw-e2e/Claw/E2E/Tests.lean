@@ -1,6 +1,7 @@
 import Claw.Gateway.Service
 import Claw.Memory.CacheStore
 import Claw.Core.Porting
+import Claw.Core.ToolDsl
 import Claw.Channel.Registry
 import Claw.Channel.WebChat.Adapter
 import Claw.Channel.Telegram.Adapter
@@ -279,6 +280,15 @@ private def testPortingCoverageModel : IO Unit := do
   assertTrue (openclawCoverage > 0.0) "openclaw coverage should be > 0"
   assertTrue (zeroclawCoverage > 0.0) "zeroclaw coverage should be > 0"
 
+private def testToolStubDsl : IO Unit := do
+  let eager : ToolDescriptor := toolStub% "ToolSearch" @ "v1" # 42
+  let deferred : ToolDescriptor := { (toolStub% "ReadFile" @ "v2" # 77) with deferredLoading := true }
+  assertEq "tool dsl eager name" eager.name "ToolSearch"
+  assertEq "tool dsl eager deferred" eager.deferredLoading false
+  assertEq "tool dsl deferred name" deferred.name "ReadFile"
+  assertEq "tool dsl deferred flag" deferred.deferredLoading true
+  assertEq "tool dsl deferred schema hash" deferred.schemaHash 77
+
 /-- Runs all added cache architecture tests for M1. -/
 def runAll : IO Unit := do
   testDeterministicFingerprint
@@ -290,6 +300,7 @@ def runAll : IO Unit := do
   testChannelAdapterFFIStubs
   testDaemonMessagePath
   testPortingCoverageModel
+  testToolStubDsl
   IO.println "claw-e2e-tests: ok"
 
 end Claw.E2E
