@@ -1,4 +1,5 @@
 import Claw.Memory.CacheStore
+import Claw.Core.Porting
 
 namespace Claw.Cli
 open Claw.Core
@@ -9,7 +10,8 @@ private def usage : String :=
   "clawctl usage:\n" ++
   "  clawctl cache stats [--db <path>]\n" ++
   "  clawctl cache misses --recent <n> [--db <path>]\n" ++
-  "  clawctl session fork --session <id> --reason <reason> [--db <path>]"
+  "  clawctl session fork --session <id> --reason <reason> [--db <path>]\n" ++
+  "  clawctl port status [--runtime <openclaw|zeroclaw>]"
 
 private def parseDbPath : List String → System.FilePath × List String
   | "--db" :: p :: rest => (p, rest)
@@ -26,6 +28,13 @@ private def lookupFlagValue (flag : String) : List String → Option String
   | [] => none
   | f :: v :: rest => if f == flag then some v else lookupFlagValue flag (v :: rest)
   | [_] => none
+
+private def parseRuntime (args : List String) : Except String UpstreamRuntime := do
+  let raw := (lookupFlagValue "--runtime" args).getD "openclaw"
+  match raw.trimAscii.toString.toLower with
+  | "openclaw" => .ok .openclaw
+  | "zeroclaw" => .ok .zeroclaw
+  | other => .error s!"unknown runtime '{other}' (expected openclaw|zeroclaw)"
 
 private def printStats (stats : CacheStats) : IO Unit := do
   IO.println s!"total_events={stats.totalEvents}"
@@ -66,6 +75,22 @@ private def runSessionFork (args : List String) : IO Unit := do
   let lineage ← forkSession store { raw := sessionId } { raw := childId } reason
   IO.println s!"forked parent={sessionId} child={childId} lineage={lineage.raw}"
 
+private def runPortStatus (args : List String) : IO UInt32 := do
+  match parseRuntime args with
+  | .error err =>
+    IO.eprintln err
+    pure 2
+  | .ok runtime =>
+    let features := portingFeatures runtime
+    let implemented := implementedCount features
+    let total := features.length
+    IO.println s!"runtime={runtime}"
+    for feature in features do
+      let status := if feature.inLawM1 then "implemented" else "pending"
+      IO.println s!"[{status}] {feature.category}/{feature.name} - {feature.notes}"
+    IO.println s!"coverage={coveragePercent features}% ({implemented}/{total})"
+    pure 0
+
 /-- CLI entry point for cache and session operations. -/
 def run (argv : List String) : IO UInt32 := do
   match argv with
@@ -78,6 +103,8 @@ def run (argv : List String) : IO UInt32 := do
   | "session" :: "fork" :: rest =>
     runSessionFork rest
     pure 0
+  | "port" :: "status" :: rest =>
+    runPortStatus rest
   | _ =>
     IO.eprintln usage
     pure 2
