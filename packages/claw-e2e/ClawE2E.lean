@@ -1,3 +1,2 @@
 import Claw.E2E.Tests
-
-end
+import Claw.E2E.CacheBench

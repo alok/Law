@@ -12,6 +12,7 @@ require claw_provider from "packages/claw-provider"
 require claw_runtime from "packages/claw-runtime"
 require claw_gateway from "packages/claw-gateway"
 require claw_memory from "packages/claw-memory"
+require claw_daemon from "packages/claw-daemon"
 require claw_channel from "packages/claw-channel"
 require claw_channel_webchat from "packages/claw-channel-webchat"
 require claw_channel_telegram from "packages/claw-channel-telegram"
@@ -19,6 +20,7 @@ require claw_channel_slack from "packages/claw-channel-slack"
 require claw_channel_discord from "packages/claw-channel-discord"
 require claw_e2e from "packages/claw-e2e"
 require clawctl from "apps/clawctl"
+require clawd from "apps/clawd"
 
 @[default_target]
 lean_lib Law
